@@ -1,0 +1,379 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────
+
+enum ApplicationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  WAITLISTED
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PARTIAL
+  VERIFIED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum Religion {
+  HINDU
+  MUSLIM
+  CHRISTIAN
+  SIKH
+  JAIN
+  BUDDHIST
+  OTHER
+}
+
+enum MatchStatus {
+  PENDING
+  SHOWN
+  MUTUAL
+  REJECTED
+  EXPIRED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  BLOCKED
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum MembershipTier {
+  BASIC
+  PREMIUM
+  ELITE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ─────────────────────────────────────
+// CORE MODELS
+// ─────────────────────────────────────
+
+model User {
+  id             String         @id @default(cuid())
+  clerkId        String         @unique
+  email          String         @unique
+  phone          String?        @unique
+  status         UserStatus     @default(PENDING_VERIFICATION)
+  role           String         @default("member")
+  membershipTier MembershipTier @default(BASIC)
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastActiveAt DateTime?
+
+  profile          Profile?
+  application      Application?
+  membership       Membership?
+  sentRequests     Match[]        @relation("MatchFromUser")
+  receivedRequests Match[]        @relation("MatchToUser")
+  conversationsA   Conversation[] @relation("ConversationUserA")
+  conversationsB   Conversation[] @relation("ConversationUserB")
+  sentMessages     Message[]
+  notifications    Notification[]
+  payments         Payment[]
+  blockedUsers     Block[]        @relation("Blocker")
+  blockedByUsers   Block[]        @relation("Blocked")
+
+  @@index([clerkId])
+  @@index([status])
+  @@index([membershipTier])
+}
+
+model Profile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName     String
+  lastName      String
+  dateOfBirth   DateTime
+  gender        Gender
+  height        Int?
+  motherTongue  String?
+  religion      Religion?
+  caste         String?
+  subCaste      String?
+  manglik       Boolean?
+  maritalStatus String    @default("Never Married")
+
+  city    String
+  state   String
+  country String  @default("India")
+  pincode String?
+
+  highestEducation String
+  educationDetails Json
+  institutionTier  String?
+  occupation       String
+  employmentType   String
+  companyName      String?
+  designation      String?
+  annualIncome     String?
+  workLocation     String?
+
+  diet      String?
+  drinking  String?
+  smoking   String?
+  exercise  String?
+  hobbies   String[]
+  languages String[]
+
+  bio        String? @db.Text
+  lookingFor String? @db.Text
+
+  prefAgeMin      Int?
+  prefAgeMax      Int?
+  prefHeightMin   Int?
+  prefHeightMax   Int?
+  prefReligions   String[]
+  prefCities      String[]
+  prefEducation   String[]
+  prefOccupations String[]
+
+  photos ProfilePhoto[]
+
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  verifiedAt         DateTime?
+  verifiedBy         String?
+
+  matchScore          Float?
+  profileCompleteness Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([city, state])
+  @@index([verificationStatus])
+  @@index([institutionTier])
+}
+
+model ProfilePhoto {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  url        String
+  publicId   String
+  isPrimary  Boolean  @default(false)
+  isApproved Boolean  @default(false)
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([profileId])
+}
+
+model Application {
+  id     String            @id @default(cuid())
+  userId String            @unique
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status ApplicationStatus @default(PENDING)
+
+  fullName    String
+  email       String
+  phone       String
+  occupation  String
+  institution String
+  city        String
+  referral    String?
+  motivation  String? @db.Text
+  linkedinUrl String?
+
+  reviewedBy  String?
+  reviewNote  String? @db.Text
+  reviewedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Match {
+  id         String      @id @default(cuid())
+  fromUserId String
+  fromUser   User        @relation("MatchFromUser", fields: [fromUserId], references: [id])
+  toUserId   String
+  toUser     User        @relation("MatchToUser", fields: [toUserId], references: [id])
+  status     MatchStatus @default(PENDING)
+
+  compatibilityScore  Float?
+  scoreBreakdown      Json?
+
+  fromUserInterested Boolean?
+  toUserInterested   Boolean?
+
+  generatedBy String    @default("algorithm")
+  shownAt     DateTime?
+  mutualAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conversation Conversation?
+
+  @@unique([fromUserId, toUserId])
+  @@index([fromUserId, status])
+  @@index([toUserId, status])
+  @@index([status])
+}
+
+model Conversation {
+  id      String             @id @default(cuid())
+  matchId String?            @unique
+  match   Match?             @relation(fields: [matchId], references: [id])
+  userAId String
+  userA   User               @relation("ConversationUserA", fields: [userAId], references: [id])
+  userBId String
+  userB   User               @relation("ConversationUserB", fields: [userBId], references: [id])
+  status  ConversationStatus @default(ACTIVE)
+
+  messages    Message[]
+  lastMessage DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userAId])
+  @@index([userBId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+
+  content     String        @db.Text
+  messageType String        @default("text")
+  mediaUrl    String?
+  status      MessageStatus @default(SENT)
+  readAt      DateTime?
+
+  deleted   Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    String
+  title   String
+  body    String
+  data    Json?
+  read    Boolean   @default(false)
+  readAt  DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+model Membership {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tier      MembershipTier
+  startDate DateTime
+  endDate   DateTime?
+  isActive  Boolean        @default(true)
+  autoRenew Boolean        @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  payments  Payment[]
+}
+
+model Payment {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id])
+  membershipId String?
+  membership   Membership? @relation(fields: [membershipId], references: [id])
+
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String? @unique
+
+  amount   Int
+  currency String        @default("INR")
+  status   PaymentStatus @default(PENDING)
+
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id])
+  blockedId String
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id])
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+}
+
+model VerificationDocument {
+  id         String    @id @default(cuid())
+  userId     String
+  docType    String
+  fileUrl    String
+  publicId   String
+  isVerified Boolean   @default(false)
+  verifiedAt DateTime?
+  verifiedBy String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
